@@ -1,0 +1,368 @@
+#include <iostream>
+#include <ostream>
+#include <istream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <math.h>
+#include <stdlib.h>
+//using namespace std;
+int **matrixID;
+int **matrixNoVal;
+int **matrixBI;
+
+int main()
+{
+
+
+    /// File pointer to the input dataset
+    std::ifstream dataset;
+
+    /// File pointer to the biclusters dataset
+    std::ifstream biclusters;
+
+    /// File pointer to the evaluation recommendations dataset
+    std::ifstream RecDataset;
+
+    /// File pointer to the output dataset ///CHEVI V2
+    std::fstream fout;
+
+    /// Number of rows and columns of input dataset
+
+    int numRowID, numColID;
+
+    /// Row and columns values. Input parameters 1 and 2
+
+    numRowID=6040;
+    numColID=3900;
+
+    /// Matrix for storing the input dataset
+
+    matrixID = new int *[numRowID];
+
+    /// Matrix for storing the position of no scoring values in the data matrix
+
+    //int matrixNoVal[numRowID][numColID];
+    matrixNoVal = new int *[numRowID];
+
+    /// Matrix for storing the relationship between rows in the biclusters
+
+    //int matrixBI[numRowID][numRowID];
+    matrixBI = new int *[numRowID];
+
+    /// Initializing the arrays. The matrixID and the matrixNoVal are initialized using -1 value. The matrixBI is initialized using
+    /// 0 value.
+
+    int r,k,l,m;
+
+    /// 1- PREPROCESSING INPUT DATA AND THE INTERNAL ARRAYS
+    ///////////////////////////////////////////////////////////
+
+    /// 1.1 - Arrays Initialization.
+    for (r=0;r<numRowID;r++){
+        matrixID[r] = new int[numColID];
+        matrixNoVal[r]= new int[numColID];
+        matrixBI[r]=new int[numRowID];
+    }
+    for(k=0; k<numRowID; k++)
+    {
+        /// This loop initializes the matrix of the input dataset
+
+        for(l=0; l<numColID; l++)
+        {
+            matrixID[k][l]=-1;
+            matrixNoVal[k][l]=-1;
+
+        }
+
+        /// This loop initializes the matrix of the biclusters
+
+        for(m=k; m<numRowID; m++)
+        {
+            matrixBI[k][m]=0;
+            matrixBI[m][k]=0;
+
+        }
+
+    }
+
+    /// 1.2 - Open the input dataset in read mode
+    /// Parameter number 4, input dataset
+    dataset.open("C:\\Users\\dsrodbae4\\ml-1m_3_90_10_Opt4.csv", std::ios::in);
+
+    /// Read the Data from the file
+
+    std::string line, word;
+    int i,j,number;
+
+    /// Reading the input dataset and storing it in matrixID.
+    /// The input dataset is a CSV file, with the numbers separated by ',' in the rows.
+
+    i=0;
+
+    while ( getline (dataset,line) )
+    {
+
+        j=0;
+        k=0;
+        /// used for breaking words
+        std::stringstream s(line);
+
+        while (std::getline(s, word, ','))
+        {
+
+            number=stol(word,nullptr,0);
+            matrixID[i][j]=number;
+            if(number==-1)
+            {
+                matrixNoVal[i][k]=j;
+                k=k+1;
+            }
+
+
+            j=j+1;
+        }
+        i=i+1;
+
+        line.clear();
+    }
+
+/// 1.3 - Open the biclusters dataset in read mode
+/// Parameter number 6, biclusters dataset
+
+    biclusters.open("C:\\Users\\dsrodbae4\\ml-1m_Bin_3_90_10_Opt4_biclusters.csv", std::ios::in);
+
+
+/// Reading the biclusters dataset. Each row is separated in two parts (;). Then, the elements in each part are separated by '.'.
+    std::string biline, biword,bipart,binumber;
+    int bi,biaux;
+
+    while ( getline (biclusters,biline) )
+    {
+
+        std::stringstream b(biline);
+        std::getline(b, biword, ';'); ///Taking only the first part of every row
+
+        std::stringstream r(biword);
+
+        //std::cout <<"PROCESANDO BICLUSTER \n";
+        //std::cout << biword;
+        //std::cout << '\n';
+
+        while (std::getline(r, bipart, ',')) ///This loop divides in two every row
+        {
+            std::stringstream s(biword);
+            bi=stol(bipart,nullptr,0);
+
+            while (std::getline(s, binumber, ',')) ///This loop iterates over the row
+            {
+                biaux=stol(binumber,nullptr,0); ///string into number
+
+                matrixBI[bi-1][biaux-1]=matrixBI[bi-1][biaux-1] + 1; /// IMPORTANT: we have considered that the number of rows in biclusters starts in 1, while the pointers of the array start in zero
+
+
+            }
+
+        }
+
+
+        biline.clear();
+    }
+
+    int sum;
+    int max,maxUser;
+    max=-1;
+    maxUser=-1;
+    /// 1.5 - Getting the most connected user
+    for(r=0;r<numRowID;r++)
+    {
+        sum=0;
+        for(k=0;k<numRowID;k++)
+        {
+            sum=sum+matrixBI[r][k];
+        }
+        //std::cout <<"USER "<<r<<" with " << sum <<" biclusters"<<'\n';
+        if(max<sum)
+        {
+            max=sum;
+            maxUser=r;
+        }
+    }
+    std::cout <<"The most connected user is "<<maxUser<<" with " << max <<" biclusters"<<'\n';
+
+
+    /// 2. - EVALUATION PROCESS: every recommendation value from the test dataset is processed. The original value will be compared with the value generated by
+    /// the evaluation process.
+   /// Parameter number 5, testPoints dataset
+
+   RecDataset.open("C:\\Users\\dsrodbae4\\ml-1m_Bin_3_90_10_Opt4_TestPoints.csv", std::ios::in);
+
+    std::string line2, word2;
+    int valRow;
+    int valCol;
+    int valRec;
+    int valAux;
+    /// Threshold for the mean of the scores.
+    ///Third parameter: binarize threshold value
+    int threshold=3;
+    float voteThreshold; /// minimum number of votes for a item to be processed.
+    float finalRec;
+    int tp, tn, fp, fn;  /// for the confusion matrix
+    int contTest=0;
+    float rmseSum,rmse,maeSum,mae;
+    int contCold;
+    rmse=0;
+    rmseSum=0;
+    mae=0;
+    maeSum=0;
+    tp=0;
+    tn=0;
+    fp=0;
+    fn=0;
+    contCold=0;
+    float sumUserBiMean = 0;
+
+    while ( getline (RecDataset,line2) ) {
+
+        contTest = contTest + 1;
+        /// used for breaking words
+        std::stringstream t(line2);
+        int cont = 0; /// for counting the values of every rows
+        while (std::getline(t, word2, ',')) ///This loop iterates over the row
+        {
+            valAux = stol(word2, nullptr, 0); ///string into number
+            cont = cont + 1;
+            switch (cont) {
+                case 1:
+                    valRow = valAux;
+                case 2:
+                    valCol = valAux;
+                case 3:
+                    valRec = valAux;
+
+            }
+
+        }
+        //std::cout << "Analyzing user " << valRow << '\n';
+        //std::cout << "Processing item " << valCol << " with test value " << valRec << '\n';
+
+        /// Now we need to count votes and recommendation values.
+        /// We loop over the users with which user i shares a bicluster (User j). If User j has a recommendation
+        /// to that item, we count a vote and sum its recommendation. At the end, if the count of votes is greater
+        /// than a threshold (filter 1), we calculate the mean of the recommendation to decide if the item is
+        /// recommended or not (filter 2).
+
+
+        int sumNumUserBi = 0;
+        int numBiGTzero = 0;
+        int recSum = 0;
+        int votes = 0;
+        /// to calculate the average number of biclusters the active user shares with other users
+        for (j = 0; j < numRowID; j++) {
+
+           if (j != valRow && matrixBI[valRow][j] > 0) {
+                sumNumUserBi = sumNumUserBi + matrixBI[valRow][j];
+                numBiGTzero = numBiGTzero + 1;
+            }
+           /* if (j != valRow && matrixBI[valRow][j] > 0) {
+                         numBiGTzero = numBiGTzero + 1;
+            }*/
+
+        }
+        float meanNumBi = 0;
+        meanNumBi = (float) sumNumUserBi / numBiGTzero;
+        //meanNumBi = matrixBI[valRow][valRow] / numBiGTzero;
+       // std::cout << " ------> NUMERO MEDIO DE BICLUSTERS QUE COMPARTE " << meanNumBi << '\n';
+        for (j = 0; j < numRowID; j++) {
+
+            if (j != valRow) /// to avoid the main diagonal
+            {
+
+                int jUser = matrixBI[valRow][j];
+                int recVal = matrixID[j][valCol];
+                if (jUser > 0 && (float) jUser >= meanNumBi && recVal !=-1) {  /// WE ADD THE 'AND' TO ONLY INCLUDE THOSE USERS WHO SHARE A NUMBER OF BICLUSTERS ABOVE OR EQUAL TO THE AVERAGE
+                //if (jUser > 0 && recVal !=-1) {  /// WE ADD THE 'AND' TO ONLY INCLUDE THOSE USERS WHO SHARE A NUMBER OF BICLUSTERS ABOVE OR EQUAL TO THE AVERAGE
+                    // std::cout << "   Shares " << jUser << " bicluster with " << j <<'\n';
+                    //std::cout << "    And the reccomendation is " << recVal <<'\n';
+                    recSum = recSum + recVal;
+                    votes = votes + 1;
+
+
+                }
+
+
+            }
+
+        }
+       // std::cout << "   Number of votes" << votes << '\n';
+        //std::cout << "   Value of RecSum" << recSum << '\n';
+
+        if (recSum==0) /// COLD START PROBLEM
+        {
+            //std::cout << "************* COLD START PROBLEM *****************"<<'\n';
+            finalRec=matrixID[maxUser][valCol];
+            contCold=contCold+1;
+
+        }
+        else {
+            finalRec = (float) recSum / (float) votes;
+
+        }
+
+
+
+        /// Confusion Matrix
+
+        if (finalRec >= threshold && valRec >= threshold) {
+            tp = tp + 1;
+            //std::cout << "========== TRUE POSITIVE ============" << '\n';
+
+        } else if (finalRec >= threshold && valRec < threshold) {
+            fp = fp + 1;
+            //std::cout << "========== FALSE POSITIVE ============" << '\n';
+        } else if (finalRec < threshold && valRec >= threshold) {
+            fn = fn + 1;
+            //std::cout << "========== FALSE NEGATIVE ============" << '\n';
+        } else if (finalRec < threshold && valRec < threshold) {
+            tn = tn + 1;
+            //std::cout << "========== TRUE NEGATIVE ============" << '\n';
+        }
+
+
+        //std::cout << "---> The new value is  " << finalRec << '\n';
+        //std::cout << "---> Difference  " << finalRec - (float) valRec << '\n';
+
+        rmseSum = pow((round(finalRec) - valRec), 2) + rmseSum;
+        maeSum = abs((round(finalRec) - valRec)) + maeSum;
+        // rmseSum = pow(finalRec - (float) valRec, 2) + rmseSum;
+        // maeSum = abs(finalRec - (float) valRec) + maeSum;
+    }
+
+
+
+    float accuracy=(float)(tp+tn)/(float)(tp+tn+fp+fn);
+    float precision=(float)tp/(float)(tp+fp);
+    float recall=(float)tp/(float)(tp+fn);
+    float falsePositiveRate=(float)(fp)/(float)(fp+tn);
+    rmse= rmseSum/contTest;
+    mae=maeSum/contTest;
+    std::cout << "TRUE POSITIVE " << tp <<'\n';
+    std::cout << "TRUE NEGATIVE " << tn <<'\n';
+    std::cout << "FALSE POSITIVE " << fp <<'\n';
+    std::cout << "FALSE NEGATIVE " << fn <<'\n';
+    std::cout << "CONT TEST " << contTest <<'\n';
+    std::cout << "ACCURACY  " << accuracy <<'\n';
+    std::cout << "PRECISION  " << precision <<'\n';
+    std::cout << "RECALL  " << recall <<'\n';
+    std::cout << "FALSE POSITIVE RATE  " << falsePositiveRate <<'\n';
+    std::cout << "RMSE  " << rmse <<'\n';
+    std::cout << "MAE " << mae <<'\n';
+    std::cout << "CONT COLD " << contCold <<'\n';
+
+
+    return 0;
+}
+
+
+
